@@ -2,11 +2,11 @@ package com.charllson.inventory_service;
 
 import com.charllson.inventory_service.model.Inventory;
 import com.charllson.inventory_service.repository.InventoryRepository;
-import com.charllson.inventory_service.service.InventoryService;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+
 
 @SpringBootApplication
 public class InventoryServiceApplication {
