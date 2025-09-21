@@ -1,5 +1,7 @@
 package org.charllson.orderservice.service;
 
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.Tracer;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.charllson.orderservice.dto.InventoryResponse;
@@ -21,6 +23,7 @@ import java.util.UUID;
 public class OrderService {
     private final OrderRepository orderRepository;
     private final WebClient.Builder webClientBuilder;
+    private final Tracer tracer;
 
 
     public String placeOrder(OrderRequest orderRequest) {
@@ -37,21 +40,27 @@ public class OrderService {
                 .map(OrderLineItems::getSkucode)
                 .toList();
 
-        //Make a call to the Inventory Service
-        InventoryResponse[] inventoryResponseArray = webClientBuilder.build().get()
-                .uri("http://inventory-service/api/inventory", uriBuilder -> uriBuilder.queryParam("skuCodes", skuCodes).build())
-                .retrieve()
-                .bodyToMono(InventoryResponse[].class)
-                .block(); //ensure its synchronious
+        //using tracer
+        Span inventoryServiceLookUp = tracer.nextSpan().name("InventoryServiceLookUp");
+        try (Tracer.SpanInScope spanInScope = tracer.withSpan(inventoryServiceLookUp.start())) {
+            //Make a call to the Inventory Service
+            InventoryResponse[] inventoryResponseArray = webClientBuilder.build().get()
+                    .uri("http://inventory-service/api/inventory", uriBuilder -> uriBuilder.queryParam("skuCodes", skuCodes).build())
+                    .retrieve()
+                    .bodyToMono(InventoryResponse[].class)
+                    .block(); //ensure its synchronious
 
-        //check if all product is in stock
-        boolean allProductInStock = Arrays.stream(inventoryResponseArray).allMatch(InventoryResponse::isInStock);
+            //check if all product is in stock
+            boolean allProductInStock = Arrays.stream(inventoryResponseArray).allMatch(InventoryResponse::isInStock);
 
-        if (allProductInStock) {
-            orderRepository.save(order);
-            return "Order Placed Successfully";
-        } else {
-            throw new IllegalArgumentException("Order Not Found! Please try again!");
+            if (allProductInStock) {
+                orderRepository.save(order);
+                return "Order Placed Successfully";
+            } else {
+                throw new IllegalArgumentException("Order Not Found! Please try again!");
+            }
+        } finally {
+            inventoryServiceLookUp.end();
         }
     }
 
