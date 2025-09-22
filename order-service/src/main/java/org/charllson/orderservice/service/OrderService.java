@@ -7,9 +7,11 @@ import lombok.RequiredArgsConstructor;
 import org.charllson.orderservice.dto.InventoryResponse;
 import org.charllson.orderservice.dto.OrderLineItemsDto;
 import org.charllson.orderservice.dto.OrderRequest;
+import org.charllson.orderservice.event.OrderPlaceEvent;
 import org.charllson.orderservice.model.Order;
 import org.charllson.orderservice.model.OrderLineItems;
 import org.charllson.orderservice.respository.OrderRepository;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -24,6 +26,8 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final WebClient.Builder webClientBuilder;
     private final Tracer tracer;
+    private final KafkaTemplate<String, OrderPlaceEvent> kafkaTemplate;
+
 
 
     public String placeOrder(OrderRequest orderRequest) {
@@ -55,6 +59,8 @@ public class OrderService {
 
             if (allProductInStock) {
                 orderRepository.save(order);
+                //Send Kafka message to notification service
+                kafkaTemplate.send("notificationTopic", new OrderPlaceEvent(order.getOrderNumber()));
                 return "Order Placed Successfully";
             } else {
                 throw new IllegalArgumentException("Order Not Found! Please try again!");
