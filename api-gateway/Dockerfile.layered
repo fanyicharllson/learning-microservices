@@ -1,0 +1,27 @@
+# Multi-stage, layered Dockerfile for Spring Boot API Gateway (Java 21)
+# Stage 1: Extract Spring Boot layers from the built JAR
+FROM eclipse-temurin:21-jre AS builder
+WORKDIR /application
+
+# Accept the jar path as a build-arg (defaults to target/*.jar)
+ARG JAR_FILE=target/*.jar app.jar
+COPY ${JAR_FILE} application.jar
+
+# Use Spring Boot layertools to extract layers
+RUN java -Djarmode=layertools -jar application.jar extract
+
+# Stage 2: Lightweight runtime image
+FROM eclipse-temurin:21-jre
+WORKDIR /application
+
+# Copy extracted layers from the builder stage
+COPY --from=builder /application/dependencies/ ./dependencies/
+COPY --from=builder /application/snapshot-dependencies/ ./snapshot-dependencies/
+COPY --from=builder /application/spring-boot-loader/ ./spring-boot-loader/
+COPY --from=builder /application/application/ ./application/
+
+# Expose the default Spring Boot port (optional; for documentation)
+EXPOSE 8080
+
+# Use the Spring Boot loader to run the app from layers
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
