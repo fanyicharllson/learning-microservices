@@ -1,6 +1,84 @@
 version: '3.8'
 
 services:
+  ##MySql Docker Compose config
+  postgres-order:
+    container_name: postgres-order
+    image: postgres
+    environment:
+      POSTGRES_DB: order-service
+      POSTGRES_USER: pcharllson
+      POSTGRES_PASSWORD: password
+      PGDATA: /data/postgres
+    volumes:
+      - ./postgres-order:/data/postgres
+    expose:
+      - "5431"
+    ports:
+      - "5431:5431"
+    command: -p 5431
+    restart: unless-stopped
+
+
+  postgres-inventory:
+    container_name: postgres-inventory
+    image: postgres
+    environment:
+      POSTGRES_DB: inventory-service
+      POSTGRES_USER: pcharllson
+      POSTGRES_PASSWORD: password
+      PGDATA: /data/postgres
+    volumes:
+      - ./postgres-inventory:/data/postgres
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    command: -p 5431
+
+  ## Mongo Docker compose config
+  mongo:
+    container_name: mongo
+    image: mongo:4.4.14-rc0-focal
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    expose:
+      - "27017"
+    volumes:
+      - ./mongo-data:/data/db
+
+  ## Keycloak config with mysql database
+  keycloak-mysql:
+    container_name: keycloak-mysql
+    image: mysql:5.7
+    volumes:
+      - ./mysql_keycloak_data:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: keycloak
+      MYSQL_USER: keycloak
+      MYSQL_PASSWORD: password
+
+  keycloak:
+    container_name: keycloak
+    image: quay.io/keycloak/keycloak:24.0.1
+    command: [ "start-dev", "--import-realm" ]
+    environment:
+      DB_VENDOR: MYSQL
+      DB_ADDR: mysql
+      DB_DATABASE: keycloak
+      DB_USER: keycloak
+      DB_PASSWORD: password
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8181:8080"
+    volumes:
+      - ./docker/keycloak/realms/:/opt/keycloak/data/import/
+    depends_on:
+      - keycloak-mysql
+
+  ## Zookeeper service
   zookeeper:
     image: confluentinc/cp-zookeeper:latest
     container_name: zookeeper
@@ -38,3 +116,141 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+
+  ## Zipkin
+  zipkin:
+    image: openzipkin/zipkin
+    container_name: zipkin
+    ports:
+      - "9411:9411"
+
+  ## Eureka server
+  discovery-server:
+    image: charllson717/discovery-server:latest
+    container_name: discovery-sever
+    pull_policy: always
+    ports:
+      - "8761:8761"
+    environment:
+      - SPRING_PROFILE_ACTIVE=docker
+    depends_on:
+      - zipkin
+
+
+  ## api-gateway
+  api-gateway:
+    image: charllson717/api-gateway:latest
+    container_name: api-gateway
+    pull_policy: always
+    ports:
+      - "8781:8781"
+    expose:
+      - "8181"
+    environment:
+      - SPRING_PROFILE_ACTIVE=docker
+      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY= TRACE
+    depends_on:
+      - zipkin
+      - discovery-server
+      - keycloak
+
+  ## product-service docker compose config
+  product-service:
+    image: charllson717/product-service:latest
+    container_name: product-service
+    pull_policy: always
+    ports:
+      - "8781:8781"
+    expose:
+      - "8181"
+    environment:
+      - SPRING_PROFILE_ACTIVE=docker
+    depends_on:
+      - mongo
+      - discovery-server
+      - api-gateway
+      -
+  ## order-service docker compose config
+  order-service:
+    image: charllson717/order-service:latest
+    container_name: order-service
+    pull_policy: always
+    ports:
+      - "8781:8781"
+    expose:
+      - "8181"
+    environment:
+      - SPRING_PROFILE_ACTIVE=docker
+      - SPRING_DATABASE_URL=jdbc:postgresql://postgres-order:5431/order-service
+    depends_on:
+      - product-order
+      - discovery-server
+      - api-gateway
+      - zipkin
+      - broker
+
+
+  ## inventory-service docker compose config
+  inventory-service:
+      image: charllson717/inventory-service:latest
+      container_name: inventory-service
+      pull_policy: always
+      ports:
+        - "8781:8781"
+      expose:
+        - "8181"
+      environment:
+        - SPRING_PROFILE_ACTIVE=docker
+        - SPRING_DATABASE_URL=jdbc:postgresql://postgres-order:5431/inventory-service
+      depends_on:
+        - progres-inventory
+        - discovery-server
+        - api-gateway
+
+  ## Notification-service docker compose config
+  notification-service:
+    image: charllson717/notification-service:latest
+    container_name: notification-service
+    pull_policy: always
+    ports:
+      - "8781:8781"
+    expose:
+      - "8181"
+    environment:
+      - SPRING_PROFILE_ACTIVE=docker
+    depends_on:
+      - broker
+      - discovery-server
+      - api-gateway
+      - zipkin
+
+  ## Grafana config
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: grafana
+    volumes:
+      - ./docker/grafana:/etc/grafana/provisioning/datasources:ro
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    ports:
+      - "3000:3000"
+  ## Prometheus config
+  prometheus:
+    image: prom/prometheus:v2.46.0
+    container_name: prometheus
+    command:
+      - --enable-feature=exemplar-storage
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+    depends_on:
+      - product-service
+      - inventory-service
+      - order-service
+      - notification-service
+
