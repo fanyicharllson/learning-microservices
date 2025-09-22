@@ -75,6 +75,47 @@
                     </excludes>
                 </configuration>
             </plugin>
+            <!-- Google Jib Plugin for Docker containerization -->
+            <plugin>
+                <groupId>com.google.cloud.tools</groupId>
+                <artifactId>jib-maven-plugin</artifactId>
+                <version>3.4.0</version>
+                <configuration>
+                    <!-- Base image (Java runtime) -->
+                    <from>
+                        <image>eclipse-temurin:21-jre</image>
+                    </from>
+                    <!-- Target image name -->
+                    <to>
+                        <!-- Push to registry -->
+                        <image>docker.io/charllson717/${project.artifactId}:${project.version}</image>
+                    </to>
+                    <!-- Container configuration -->
+                    <container>
+                        <jvmFlags>
+                            <jvmFlag>-Xms512m</jvmFlag>
+                            <jvmFlag>-Xmx1024m</jvmFlag>
+                            <jvmFlag>-Dserver.port=8080</jvmFlag>
+                        </jvmFlags>
+                        <ports>
+                            <port>8080</port>
+                        </ports>
+                        <format>OCI</format>
+                        <!-- Environment variables -->
+                        <environment>
+                            <SPRING_PROFILES_ACTIVE>docker</SPRING_PROFILES_ACTIVE>
+                        </environment>
+                    </container>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>dockerBuild</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>
